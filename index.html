@@ -803,7 +803,7 @@
     lines.push('# gps: ' + (hasGps
       ? (state.location.lat + ',' + state.location.lon + ' (\u00b1' + Math.round(state.location.accuracy) + 'm)')
       : state.locationStatus));
-    lines.push('timestamp_utc,device_local_time,elapsed_seconds,pulse_number,cumulative_kWh,latitude,longitude,gps_accuracy_m');
+    lines.push('timestamp_utc,device_local_time,elapsed_seconds,pulse_number,cumulative_kWh');
     state.log.forEach(function(entry, i){
       var d = new Date(state.startTime + entry.t);
       var row = [
@@ -811,10 +811,7 @@
         d.toString(),
         (entry.t / 1000).toFixed(1),
         i + 1,
-        entry.cumKwh.toFixed(4),
-        hasGps ? state.location.lat : '',
-        hasGps ? state.location.lon : '',
-        hasGps ? Math.round(state.location.accuracy) : ''
+        entry.cumKwh.toFixed(4)
       ];
       // device_local_time contains commas (e.g. "Fri Jul 03 2026 14:22:01 GMT+0800") — quote it
       row[1] = '"' + row[1] + '"';
