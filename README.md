@@ -63,7 +63,60 @@ No build step. It's one HTML file — copy it to the repo and it's live.
    your meter's LED; shorten it for fast-blinking meters, lengthen it for
    slow ones).
 
-## Detection logic (read before trusting the numbers)
+## Modes
+
+**Test mode** (default) — runs for a fixed duration (Settings), then shows
+a summary with the signal-trace chart, as described above.
+
+**Collector mode** — runs continuously until you stop it, for use as a
+comparison check against the real Energy Eye device's hourly readings.
+No fixed duration, no signal-trace chart (skipped to avoid unbounded
+memory growth over a long run), just a running pulse count and elapsed
+time. Every detected pulse is logged with a timestamp. Stop it whenever
+you want a reading, then export.
+
+Switch modes in Settings. The toggle is disabled while a run is in
+progress — stop first, then switch.
+
+**Important limitation, not a bug I can fix in this app:** a browser tab
+loses camera access and gets throttled or paused by the phone/OS the
+moment the screen locks or the tab leaves the foreground. Collector mode
+only works while the device stays awake and the tab stays in view the
+whole time. It is not a substitute for the actual device's unattended
+hourly reporting — treat it strictly as a side-by-side comparison tool
+for while you're present and watching it.
+
+## CSV export
+
+Available from the summary screen after any run (Test or Collector).
+Columns: `timestamp` (ISO 8601, absolute), `elapsed_seconds`,
+`pulse_number`, `cumulative_kWh`. A few `#`-prefixed metadata lines
+(mode, meter constant, generated-at) sit above the header row — standard
+CSV readers and Excel/Sheets tolerate this fine, but if you're parsing it
+programmatically, skip lines starting with `#`.
+
+For long Collector runs, the on-screen pulse-log table caps at the most
+recent 200 rows for display performance — the CSV export always contains
+the complete log regardless of what's shown on screen.
+
+There's no auto-upload to Google Drive or automatic hands-off saving —
+every export is a manual button tap that triggers a browser download.
+I looked at Drive auto-upload and decided against building it: it needs
+a Google Cloud OAuth client you'd have to set up yourself (tied to your
+Google account, so I can't create it for you), and browsers can't
+securely hold long-lived login tokens, so "hands-off forever" isn't
+something I could honestly promise would keep working unattended.
+
+## Works on desktop/laptop, not just phones
+
+The camera and ROI-selection code uses standard `getUserMedia` + canvas +
+mouse/touch events — nothing phone-specific. It should work the same way
+in a desktop browser with a webcam. The one mobile-oriented detail is
+`facingMode: 'environment'` in the camera request, which just asks for a
+rear camera *if available*; it's a soft "ideal" hint, not a hard
+requirement, so on a laptop with a single webcam it's ignored and that
+webcam is used normally.
+
 
 This isn't a fixed-threshold detector. It tracks a slow-moving baseline of
 the "low" brightness level and looks for a jump above
