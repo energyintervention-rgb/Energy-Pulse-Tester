@@ -131,6 +131,43 @@ flicker (fluorescent lights), or a loosely-drawn ROI can all throw it off.
 Use the live debug readout and the post-test signal trace to sanity-check
 before trusting a result.
 
+## GPS and device time
+
+Each run requests the device's GPS position once, at the moment you tap
+start (non-blocking — the test starts immediately, location fills in
+when it resolves). It does not poll continuously; a stationary meter
+test doesn't need a moving position, so one reading per run is what's
+captured.
+
+**On timestamp accuracy — this does not make timestamps more accurate.**
+Browser Geolocation returns a position and a "time" for that position,
+but that time is derived from the device's own system clock, not read
+directly from the GPS satellite signal. The CSV timestamp already comes
+from the same system clock via `Date.now()`. Adding GPS gets you *where*
+a reading was taken, not a more accurate *when*. I don't have solid
+information on whether some phone/OS combinations occasionally sync
+their system clock using GPS timing in the background — if that happens
+it would already be reflected in the system clock the app uses either
+way, not something gained by calling the Geolocation API separately.
+
+**Where it shows up:**
+- Summary screen: a GPS status line (coordinates + accuracy, or an
+  "unavailable" reason if it failed/was denied)
+- CSV export: a `# gps:` metadata comment line, plus `latitude`,
+  `longitude`, `gps_accuracy_m` columns on every row, plus a
+  `device_local_time` column (human-readable, alongside the existing
+  ISO/UTC `timestamp_utc` column)
+- HTML report export: same GPS line as the summary screen
+
+**Known limitation:** GPS accuracy on phones without a clear sky view
+(indoors, meter rooms, basements) is often poor or unavailable — this is
+a general, well-established property of GPS, not something specific to
+this app. On laptops without GPS hardware, the browser typically falls
+back to WiFi/IP-based location, which can be much less precise. Expect
+the accuracy figure shown to vary a lot by device and location, and
+expect it to sometimes fail entirely indoors — the app reports that
+honestly ("unavailable...") rather than guessing.
+
 ## Known limitations
 
 - Auto-calibration is a single snapshot over a fixed window (adjustable
