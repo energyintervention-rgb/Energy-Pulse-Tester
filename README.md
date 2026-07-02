@@ -192,6 +192,18 @@ honestly ("unavailable...") rather than guessing.
 
 ## Known limitations
 
+- Camera can go black and stay black after using Export (HTML or CSV) on
+  some mobile browsers — confirmed via testing: the file-save dialog
+  triggered by export causes the tab to lose foreground, which some
+  browsers use as a signal to kill the camera stream. Resetting the ROI
+  does not fix it, because the underlying stream is dead, not just the
+  overlay. Fixed by checking the stream's track state whenever the tab
+  regains focus (`visibilitychange`/`pageshow`) and directly after each
+  export completes, restarting the camera automatically if it's found
+  dead. Not fully verified across all browsers/devices — if the camera
+  still goes black after export following this fix, that's the next
+  thing to report back with detail on which browser/OS.
+
 - Auto-calibration is a single snapshot over a fixed window (adjustable
   in Settings, default 4s). If the meter's blink interval is longer than
   the chosen window, it may not catch a full on/off cycle and
