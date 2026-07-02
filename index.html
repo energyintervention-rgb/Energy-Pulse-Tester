@@ -111,6 +111,7 @@
   <section id="screen-summary" class="screen panel-screen">
     <h1>Test complete</h1>
     <p class="sub" id="summary-sub">60s run finished</p>
+    <p class="sub" id="location-status" style="margin-top:-14px;">GPS: not requested</p>
     <div class="stat-grid">
       <div class="stat-card"><p class="label">Pulses</p><p class="value" id="sum-pulses">0</p></div>
       <div class="stat-card"><p class="label">Energy</p><p class="value" id="sum-kwh">0.000 kWh</p></div>
@@ -195,6 +196,8 @@
     timerHandle: null,
     rafHandle: null,
     calibrating: false,
+    location: null,        // {lat, lon, accuracy} captured once at run start, or null/error string
+    locationStatus: 'not requested',
     detect: { state: 'low', baseline: null }
   };
 
@@ -227,6 +230,7 @@
     sumPulses: document.getElementById('sum-pulses'),
     sumKwh: document.getElementById('sum-kwh'),
     sumSub: document.getElementById('summary-sub'),
+    locationStatus: document.getElementById('location-status'),
     logBody: document.getElementById('log-body'),
     traceChartWrap: document.getElementById('trace-chart-wrap'),
     traceLogBody: document.getElementById('trace-log-body'),
@@ -612,6 +616,39 @@
     return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
 
+  // Captures GPS position once per run, in the background — does not block
+  // the test from starting. Browser Geolocation is derived from the
+  // device's own system clock and location providers (GPS chip on phones;
+  // often WiFi/IP-based on laptops without GPS hardware, which can be far
+  // less precise or fail indoors). Not requested unless a run is started.
+  function captureLocation(){
+    state.location = null;
+    state.locationStatus = 'requesting...';
+    updateLocationUI();
+    if(!navigator.geolocation){
+      state.locationStatus = 'unavailable (no geolocation support in this browser)';
+      updateLocationUI();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(function(pos){
+      state.location = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      };
+      state.locationStatus = 'captured (\u00b1' + Math.round(pos.coords.accuracy) + 'm)';
+      updateLocationUI();
+    }, function(err){
+      state.location = null;
+      state.locationStatus = 'unavailable (' + (err && err.message ? err.message : 'denied or failed') + ')';
+      updateLocationUI();
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  }
+
+  function updateLocationUI(){
+    if(els.locationStatus) els.locationStatus.textContent = 'GPS: ' + state.locationStatus;
+  }
+
   function startTest(){
     if(!state.roi){
       els.roiHint.style.display = '';
@@ -626,6 +663,7 @@
     state.running = true;
     state.startTime = Date.now();
     els.startBtn.classList.add('running');
+    captureLocation();
 
     startMonitorLoop();
 
@@ -716,6 +754,7 @@
 
   /* ---------------- summary screen ---------------- */
   function showSummary(){
+    updateLocationUI();
     var totalKwh = state.pulseCount / settings.pulsesPerKwh;
     var isCollector = settings.mode === 'collector';
     var elapsedS = (Date.now() - state.startTime) / 1000;
@@ -756,14 +795,30 @@
   /* ---------------- CSV export ---------------- */
   els.exportCsvBtn.addEventListener('click', function(){
     var lines = [];
+    var hasGps = !!state.location;
     lines.push('# Energy Pulse Counter export');
     lines.push('# mode: ' + settings.mode);
     lines.push('# pulses_per_kWh: ' + settings.pulsesPerKwh);
     lines.push('# generated: ' + new Date().toString());
-    lines.push('timestamp,elapsed_seconds,pulse_number,cumulative_kWh');
+    lines.push('# gps: ' + (hasGps
+      ? (state.location.lat + ',' + state.location.lon + ' (\u00b1' + Math.round(state.location.accuracy) + 'm)')
+      : state.locationStatus));
+    lines.push('timestamp_utc,device_local_time,elapsed_seconds,pulse_number,cumulative_kWh,latitude,longitude,gps_accuracy_m');
     state.log.forEach(function(entry, i){
-      var ts = new Date(state.startTime + entry.t).toISOString();
-      lines.push([ts, (entry.t / 1000).toFixed(1), i + 1, entry.cumKwh.toFixed(4)].join(','));
+      var d = new Date(state.startTime + entry.t);
+      var row = [
+        d.toISOString(),
+        d.toString(),
+        (entry.t / 1000).toFixed(1),
+        i + 1,
+        entry.cumKwh.toFixed(4),
+        hasGps ? state.location.lat : '',
+        hasGps ? state.location.lon : '',
+        hasGps ? Math.round(state.location.accuracy) : ''
+      ];
+      // device_local_time contains commas (e.g. "Fri Jul 03 2026 14:22:01 GMT+0800") — quote it
+      row[1] = '"' + row[1] + '"';
+      lines.push(row.join(','));
     });
     var csv = lines.join('\r\n');
     var blob = new Blob([csv], { type: 'text/csv' });
@@ -845,6 +900,7 @@
       '</style></head><body>' +
       '<h1>Energy blink counter report</h1>' +
       '<p class="sub">' + escapeHtml(when) + ' &middot; ' + durationS + 's test &middot; ' + settings.pulsesPerKwh + ' imp/kWh</p>' +
+      '<p class="sub">GPS: ' + escapeHtml(state.location ? (state.location.lat + ', ' + state.location.lon + ' (\u00b1' + Math.round(state.location.accuracy) + 'm)') : state.locationStatus) + '</p>' +
       '<div class="stats">' +
         '<div class="stat"><p class="label">Total pulses</p><p class="value">' + state.pulseCount + '</p></div>' +
         '<div class="stat"><p class="label">Total energy</p><p class="value">' + totalKwh.toFixed(3) + ' kWh</p></div>' +
