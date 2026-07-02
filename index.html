@@ -93,6 +93,7 @@
           <span class="pill small">b <span id="debug-brightness">0</span></span>
           <span class="pill small">base <span id="debug-baseline">0</span></span>
           <span class="pill small">&Delta; <span id="debug-delta">0</span></span>
+          <button class="pill small" id="auto-cal-btn" style="pointer-events:auto; border:none;">Auto</button>
         </div>
         <div class="hud-bottom">
           <button class="icon-btn" id="settings-btn" aria-label="Settings">&#9881;</button>
@@ -174,6 +175,7 @@
     startTime: 0,
     timerHandle: null,
     rafHandle: null,
+    calibrating: false,
     detect: { state: 'low', baseline: null }
   };
 
@@ -195,6 +197,7 @@
     debugBrightness: document.getElementById('debug-brightness'),
     debugBaseline: document.getElementById('debug-baseline'),
     debugDelta: document.getElementById('debug-delta'),
+    autoCalBtn: document.getElementById('auto-cal-btn'),
 
     screens: {
       capture: document.getElementById('screen-capture'),
@@ -367,6 +370,8 @@
 
   els.resetRoiBtn.addEventListener('click', function(){
     state.roi = null;
+    state.calibrating = false;
+    els.autoCalBtn.disabled = false;
     els.roiBox.classList.remove('set');
     els.roiHint.style.display = '';
     els.debugRow.style.display = 'none';
@@ -383,6 +388,66 @@
     // sensitivity 1..100 -> required brightness jump 60..5 (higher sensitivity = smaller jump needed)
     var d = 60 - (settings.sensitivity / 100) * 55;
     return Math.max(5, Math.min(60, d));
+  }
+
+  /* ---------------- auto-calibration ---------------- */
+  // Watches the ROI for a few seconds, measures the observed low/high brightness
+  // swing, and derives a sensitivity value from it — a starting point, not a
+  // guarantee; lighting changes or a slow/irregular blink rate can still throw it off.
+  els.autoCalBtn.addEventListener('click', function(){
+    if(!state.roi || state.running || state.calibrating) return;
+    state.calibrating = true;
+    var samples = [];
+    var calStart = Date.now();
+    var calDurationMs = 4000;
+    els.autoCalBtn.disabled = true;
+    els.roiHint.style.display = '';
+
+    function calTick(){
+      var b = sampleBrightness();
+      if(b !== null) samples.push(b);
+      var remaining = Math.ceil((calDurationMs - (Date.now() - calStart)) / 1000);
+      if(Date.now() - calStart < calDurationMs){
+        var liveRange = samples.length ? (Math.max.apply(null, samples) - Math.min.apply(null, samples)) : 0;
+        els.roiHint.textContent = 'calibrating... ' + Math.max(0, remaining) + 's (swing ' + liveRange.toFixed(0) + ')';
+        requestAnimationFrame(calTick);
+      } else {
+        finishCalibration(samples);
+      }
+    }
+    requestAnimationFrame(calTick);
+  });
+
+  function finishCalibration(samples){
+    state.calibrating = false;
+    els.autoCalBtn.disabled = false;
+
+    if(samples.length < 10){
+      els.roiHint.textContent = 'calibration failed, try again';
+      return;
+    }
+    var minB = Math.min.apply(null, samples);
+    var maxB = Math.max.apply(null, samples);
+    var range = maxB - minB;
+
+    if(range < 8){
+      els.roiHint.textContent = 'no blink detected in region, check ROI or lighting';
+      return;
+    }
+
+    var deltaTarget = Math.max(5, Math.min(60, range * 0.4));
+    var newSensitivity = Math.round(((60 - deltaTarget) / 55) * 100);
+    newSensitivity = Math.max(1, Math.min(100, newSensitivity));
+
+    settings.sensitivity = newSensitivity;
+    els.setSensitivity.value = newSensitivity;
+    els.sensOut.textContent = newSensitivity;
+    saveSettings();
+
+    // reset detection baseline so the new threshold takes effect immediately
+    state.detect = { state: 'low', baseline: null };
+
+    els.roiHint.textContent = 'calibrated: swing ' + range.toFixed(0) + ' -> sensitivity ' + newSensitivity;
   }
 
   function sampleBrightness(){
@@ -495,6 +560,10 @@
     if(!state.roi){
       els.roiHint.style.display = '';
       els.roiHint.textContent = 'select the LED region first';
+      return;
+    }
+    if(state.calibrating){
+      els.roiHint.textContent = 'wait for calibration to finish';
       return;
     }
     resetTestData();
