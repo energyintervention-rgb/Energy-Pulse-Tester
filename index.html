@@ -155,6 +155,11 @@
       <input type="range" id="set-sensitivity" min="1" max="100" value="40">
       <div class="range-val">higher = detects smaller brightness changes</div>
     </div>
+    <div class="field">
+      <label for="set-cal-duration">Auto-calibration window (seconds)</label>
+      <input type="number" id="set-cal-duration" min="1" max="30" step="1" value="4">
+      <div class="range-val">must be long enough to see one full blink cycle</div>
+    </div>
     <p class="sub" style="margin-top:24px;">Region of interest resets each time you open the camera. Draw a box tightly around just the LED for best results.</p>
   </section>
 
@@ -219,13 +224,14 @@
     setScale: document.getElementById('set-scale'),
     setDuration: document.getElementById('set-duration'),
     setSensitivity: document.getElementById('set-sensitivity'),
+    setCalDuration: document.getElementById('set-cal-duration'),
     sensOut: document.getElementById('sens-out'),
     settingsBackBtn: document.getElementById('settings-back-btn')
   };
 
   /* ---------------- settings persistence ---------------- */
   function loadSettings(){
-    var defaults = { pulsesPerKwh: 1000, duration: 60, sensitivity: 40 };
+    var defaults = { pulsesPerKwh: 1000, duration: 60, sensitivity: 40, calDuration: 4 };
     try{
       var raw = localStorage.getItem('ebc_settings');
       if(!raw) return defaults;
@@ -233,7 +239,8 @@
       return {
         pulsesPerKwh: Number(parsed.pulsesPerKwh) || defaults.pulsesPerKwh,
         duration: Number(parsed.duration) || defaults.duration,
-        sensitivity: Number(parsed.sensitivity) || defaults.sensitivity
+        sensitivity: Number(parsed.sensitivity) || defaults.sensitivity,
+        calDuration: Number(parsed.calDuration) || defaults.calDuration
       };
     }catch(e){ return defaults; }
   }
@@ -245,6 +252,7 @@
     els.setScale.value = settings.pulsesPerKwh;
     els.setDuration.value = settings.duration;
     els.setSensitivity.value = settings.sensitivity;
+    els.setCalDuration.value = settings.calDuration;
     els.sensOut.textContent = settings.sensitivity;
     els.scaleLive.textContent = settings.pulsesPerKwh;
     els.timerDisplay.textContent = formatTime(settings.duration);
@@ -264,6 +272,10 @@
     els.sensOut.textContent = settings.sensitivity;
   });
   els.setSensitivity.addEventListener('change', function(){ saveSettings(); });
+  els.setCalDuration.addEventListener('change', function(){
+    settings.calDuration = Math.max(1, Math.min(30, Number(els.setCalDuration.value) || 4));
+    saveSettings(); applySettingsToUI();
+  });
 
   /* ---------------- screen switching ---------------- */
   function showScreen(name){
@@ -401,7 +413,7 @@
     state.calibrating = true;
     var samples = [];
     var calStart = Date.now();
-    var calDurationMs = 4000;
+    var calDurationMs = settings.calDuration * 1000;
     els.autoCalBtn.disabled = true;
     els.roiHint.style.display = '';
 
