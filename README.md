@@ -1,4 +1,3 @@
-# Energy-Pulse-Tester
 # Energy Pulse Counter
 
 A self-contained, offline-capable PWA for testing LED-blink pulse counters on
@@ -48,16 +47,21 @@ No build step. It's one HTML file — copy it to the repo and it's live.
    detection.
 3. A debug row appears once the region is set: current brightness,
    baseline, delta threshold, and HI/LO state, updated live.
-4. Tap **Auto** to auto-calibrate: it watches the LED for ~4s while it
-   should be blinking, measures the brightness swing, and sets sensitivity
-   from that. It reports what it measured either way — including when it
-   sees no meaningful swing (check ROI placement / lighting in that case).
+4. Tap **Auto** to auto-calibrate: it watches the LED for the configured
+   calibration window (default 4s, adjustable in Settings — see below)
+   while it should be blinking, measures the brightness swing, and sets
+   sensitivity from that. It reports what it measured either way —
+   including when it sees no meaningful swing (check ROI placement /
+   lighting in that case).
 5. Tap the red button to start the timed test. Tap again to stop early.
 6. On completion: pulse count, kWh estimate, pulse log, and the signal
    trace chart. Export to a standalone HTML report if you want to keep
    the record or hand it off.
 7. Settings screen (gear icon): meter constant (pulses/kWh — check your
-   meter's nameplate), test duration, sensitivity.
+   meter's nameplate), test duration, sensitivity, and auto-calibration
+   window (1–30s — must be long enough to catch one full blink cycle of
+   your meter's LED; shorten it for fast-blinking meters, lengthen it for
+   slow ones).
 
 ## Detection logic (read before trusting the numbers)
 
@@ -76,10 +80,13 @@ before trusting a result.
 
 ## Known limitations
 
-- Auto-calibration is a single ~4s snapshot. If the meter's blink interval
-  is longer than that window, it may not catch a full on/off cycle and
-  under-calibrate. No fix implemented for this yet — would need a longer
-  window or manual override if it turns out to be a problem in practice.
+- Auto-calibration is a single snapshot over a fixed window (adjustable
+  in Settings, default 4s). If the meter's blink interval is longer than
+  the chosen window, it may not catch a full on/off cycle and
+  under-calibrate — lengthen the window in that case. There's no
+  automatic detection of "window too short"; it's on you to judge from
+  the meter's known blink rate or from a failed/implausible calibration
+  result.
 - Service worker registration uses a Blob URL, which not all browsers
   support for SW registration. It's wrapped in try/catch and is
   non-critical (the app works fine without it) — installability may just
