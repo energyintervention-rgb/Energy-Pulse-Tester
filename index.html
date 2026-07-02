@@ -327,6 +327,7 @@
   }
   function onDragStart(e){
     if(state.running) return;
+    if(e.target.closest && e.target.closest('button')) return; // let button taps behave normally
     e.preventDefault();
     var pos = pointerPos(e);
     drag = { x0: pos.x, y0: pos.y };
