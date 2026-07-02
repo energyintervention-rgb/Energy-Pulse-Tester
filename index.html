@@ -279,16 +279,43 @@
       els.roiHint.textContent = 'camera not supported on this browser';
       return;
     }
+    els.roiHint.textContent = 'starting camera...';
     navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false
     }).then(function(stream){
       state.stream = stream;
       els.video.srcObject = stream;
+      attemptPlay();
     }).catch(function(err){
-      els.roiHint.textContent = 'camera access denied or unavailable';
+      els.roiHint.textContent = 'camera error: ' + (err && err.name ? err.name : 'access denied or unavailable');
     });
   }
+
+  function attemptPlay(){
+    var playPromise = els.video.play();
+    if(playPromise && playPromise.catch){
+      playPromise.then(function(){
+        els.roiHint.textContent = 'tap and drag on the LED to select the region';
+      }).catch(function(err){
+        // Autoplay blocked (common in in-app browsers / some WebViews) — fall back to a tap to start.
+        els.roiHint.textContent = 'tap anywhere to start the camera';
+        els.cameraWrap.addEventListener('click', function onTapStart(){
+          els.cameraWrap.removeEventListener('click', onTapStart);
+          els.video.play().then(function(){
+            els.roiHint.textContent = 'tap and drag on the LED to select the region';
+          }).catch(function(){
+            els.roiHint.textContent = 'camera could not start in this browser';
+          });
+        });
+      });
+    }
+  }
+
+  els.video.addEventListener('error', function(){
+    els.roiHint.textContent = 'video stream error';
+  });
+
   initCamera();
 
   /* ---------------- ROI selection (tap and drag) ---------------- */
@@ -673,10 +700,12 @@
     document.head.appendChild(link);
 
     if('serviceWorker' in navigator){
-      var swSource = "self.addEventListener('fetch', function(e){});";
-      var swBlob = new Blob([swSource], { type: 'application/javascript' });
-      var swUrl = URL.createObjectURL(swBlob);
-      navigator.serviceWorker.register(swUrl).catch(function(){ /* offline install not critical */ });
+      try{
+        var swSource = "self.addEventListener('fetch', function(e){});";
+        var swBlob = new Blob([swSource], { type: 'application/javascript' });
+        var swUrl = URL.createObjectURL(swBlob);
+        navigator.serviceWorker.register(swUrl).catch(function(){ /* offline install not critical */ });
+      }catch(e){ /* service worker registration not supported for blob URLs in this browser — non-critical */ }
     }
   })();
 
