@@ -118,18 +118,35 @@ requirement, so on a laptop with a single webcam it's ignored and that
 webcam is used normally.
 
 
-This isn't a fixed-threshold detector. It tracks a slow-moving baseline of
-the "low" brightness level and looks for a jump above
-`baseline + delta`, where `delta` is derived from the sensitivity slider
-(more sensitive → smaller required jump). A hysteresis band (delta × 0.5)
-brings it back to LOW so a single blink isn't double-counted.
+## Detection logic (read before trusting the numbers)
 
-This is a design choice made without hardware to test against at build
-time — **not a validated algorithm**. It should track ambient light drift
-reasonably well, but a slow or irregular blink rate, strong ambient
-flicker (fluorescent lights), or a loosely-drawn ROI can all throw it off.
-Use the live debug readout and the post-test signal trace to sanity-check
-before trusting a result.
+This isn't a fixed-threshold detector. It tracks a slow-moving baseline of
+the resting brightness level and checks for a sharp move away from it in
+*either* direction:
+- rising above `baseline + delta` (LED pulse shows as a brightness increase), or
+- falling below `baseline − delta` (LED pulse shows as a brightness decrease)
+
+`delta` is derived from the sensitivity slider. A matching hysteresis band
+(delta × 0.5, in whichever direction the pulse triggered) brings it back
+to resting so a single blink isn't double-counted.
+
+**Why both directions:** two separate real test reports (one in near-dark
+ambient, one in bright ambient) both showed the same pattern — brightness
+sitting at a bright resting level and *dropping* during the actual pulse,
+not rising. The original version only checked for a rise, so it missed
+every pulse in both of those cases. This was confirmed from the actual
+signal-trace data in those reports, not guessed.
+
+**An open question I haven't resolved:** a separate test (fast blink,
+bright ambient) showed 83 pulses counted correctly using the old
+rise-only logic — which is hard to reconcile with the drop-pattern seen
+in the other two reports. The pulse timing in that file was also
+suspiciously regular (~0.1s apart for long stretches), which could mean
+it was partly triggering on noise rather than genuine blinks. I don't
+have enough information to explain that case, and I'm not claiming this
+fix resolves it — flagging it here so it isn't lost. If fast-blink
+counts look off after this change, that's the first thing to check with
+a fresh signal-trace export.
 
 ## GPS and device time
 
@@ -186,8 +203,11 @@ honestly ("unavailable...") rather than guessing.
   support for SW registration. It's wrapped in try/catch and is
   non-critical (the app works fine without it) — installability may just
   be less reliable on some browsers.
-- Not tested against real meter hardware as of this build. Treat first
-  real-world runs as calibration exercises, not trusted readings.
+- Tested against a small number of real reports so far (the ones that
+  drove the bidirectional-detection fix above). That's not the same as
+  broad validation — keep treating early real-world runs as calibration
+  exercises and cross-check against the actual meter reading, especially
+  the still-unresolved fast-blink case noted above.
 
 ## File structure
 
