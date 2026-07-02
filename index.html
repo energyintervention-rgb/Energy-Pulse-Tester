@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Energy Blink Counter</title>
+<style>
+  :root{
+    --bg:#0b0d0f; --panel:#15181c; --panel-2:#1c2126; --border:#2a2f36;
+    --text:#f2f3f4; --text-dim:#9aa1a8; --accent:#3ddc84; --accent-dim:#1f6e42;
+    --danger:#e05a4a; --warn:#e0a83a;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%; margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    overflow:hidden; overscroll-behavior:none;}
+  #app{height:100%; display:flex; flex-direction:column;}
+  .screen{display:none; flex:1; flex-direction:column; height:100%;}
+  .screen.active{display:flex;}
+
+  /* ---- capture screen ---- */
+  .camera-wrap{position:relative; flex:1; background:#000; overflow:hidden;}
+  #video{position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;}
+  .roi-box{position:absolute; border:2px solid var(--accent); border-radius:4px;
+    box-shadow:0 0 0 2000px rgba(0,0,0,0.35); display:none; touch-action:none;}
+  .roi-box.set{display:block;}
+  .hud{position:absolute; inset:0; display:flex; flex-direction:column; justify-content:space-between;
+    padding:14px; pointer-events:none;}
+  .hud-top{display:flex; justify-content:space-between; align-items:center; pointer-events:none;}
+  .pill{background:rgba(0,0,0,0.55); padding:6px 12px; border-radius:20px; font-size:14px; font-weight:600;}
+  #roi-hint{align-self:center; text-align:center; color:rgba(255,255,255,0.75); font-size:13px; margin:0;}
+  .debug-row{align-self:center; display:flex; gap:6px; flex-wrap:wrap; justify-content:center; pointer-events:none;}
+  .pill.small{padding:4px 9px; font-size:11px; font-weight:500; font-variant-numeric:tabular-nums;}
+  .pill.small#debug-state.hi{background:rgba(61,220,132,0.85); color:#08150d;}
+  .pill.small#debug-state.lo{background:rgba(0,0,0,0.55);}
+  .hud-bottom{display:flex; align-items:center; justify-content:center; gap:40px; pointer-events:auto; padding-bottom:6px;}
+  .icon-btn{width:44px; height:44px; border-radius:50%; border:1px solid rgba(255,255,255,0.3);
+    background:rgba(0,0,0,0.4); color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center;}
+  .record-btn{width:64px; height:64px; border-radius:50%; border:4px solid #fff; background:var(--danger);}
+  .record-btn.running{background:var(--danger); border-radius:14px; width:30px; height:30px;
+    margin:17px; border:none;}
+  .kwh-live{text-align:center; padding:10px 0; font-size:14px; color:var(--text-dim); background:var(--panel);}
+  .kwh-live b{color:var(--text); font-weight:600;}
+
+  /* ---- shared ---- */
+  .panel-screen{padding:20px; overflow-y:auto;}
+  h1{font-size:18px; font-weight:600; margin:0 0 4px;}
+  .sub{color:var(--text-dim); font-size:13px; margin:0 0 20px;}
+  .row-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .back-btn{background:none; border:none; color:var(--accent); font-size:15px; padding:4px 0;}
+
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;}
+  .stat-card{background:var(--panel); border-radius:12px; padding:16px;}
+  .stat-card .label{color:var(--text-dim); font-size:12px; margin:0 0 4px;}
+  .stat-card .value{font-size:22px; font-weight:600; margin:0;}
+
+  .btn{width:100%; padding:13px; border-radius:10px; border:1px solid var(--border); background:var(--panel-2);
+    color:var(--text); font-size:15px; font-weight:600; margin-bottom:10px; display:flex; align-items:center;
+    justify-content:center; gap:8px;}
+  .btn.primary{background:var(--accent); color:#08150d; border-color:var(--accent);}
+  .btn.ghost{background:transparent;}
+
+  .field{margin-bottom:18px;}
+  .field label{display:block; font-size:13px; color:var(--text-dim); margin-bottom:6px;}
+  .field input[type=number]{width:100%; padding:11px; border-radius:8px; border:1px solid var(--border);
+    background:var(--panel); color:var(--text); font-size:15px;}
+  .field input[type=range]{width:100%;}
+  .field .range-val{font-size:13px; color:var(--text-dim); text-align:right; margin-top:2px;}
+
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th,td{padding:6px 8px; border-bottom:1px solid var(--border); text-align:left;}
+  th{color:var(--text-dim); font-weight:500;}
+  .log-wrap{max-height:220px; overflow-y:auto; background:var(--panel); border-radius:10px; padding:8px 4px; margin-bottom:20px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- CAPTURE SCREEN -->
+  <section id="screen-capture" class="screen active">
+    <div class="camera-wrap" id="camera-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="sample-canvas" width="24" height="24" style="display:none"></canvas>
+      <div id="roi-box" class="roi-box"></div>
+      <div class="hud">
+        <div class="hud-top">
+          <span class="pill" id="timer-display">00:60</span>
+          <span class="pill" id="pulse-display">0 pulses</span>
+        </div>
+        <p id="roi-hint">tap and drag on the LED to select the region</p>
+        <div class="debug-row" id="debug-row" style="display:none;">
+          <span class="pill small" id="debug-state">LOW</span>
+          <span class="pill small">b <span id="debug-brightness">0</span></span>
+          <span class="pill small">base <span id="debug-baseline">0</span></span>
+          <span class="pill small">&Delta; <span id="debug-delta">0</span></span>
+        </div>
+        <div class="hud-bottom">
+          <button class="icon-btn" id="settings-btn" aria-label="Settings">&#9881;</button>
+          <button class="record-btn" id="start-btn" aria-label="Start test"></button>
+          <button class="icon-btn" id="reset-roi-btn" aria-label="Reset region">&#8635;</button>
+        </div>
+      </div>
+    </div>
+    <div class="kwh-live"><b id="kwh-live-val">0.000</b> kWh so far &middot; <span id="scale-live">1000</span> imp/kWh</div>
+  </section>
+
+  <!-- SUMMARY SCREEN -->
+  <section id="screen-summary" class="screen panel-screen">
+    <h1>Test complete</h1>
+    <p class="sub" id="summary-sub">60s run finished</p>
+    <div class="stat-grid">
+      <div class="stat-card"><p class="label">Pulses</p><p class="value" id="sum-pulses">0</p></div>
+      <div class="stat-card"><p class="label">Energy</p><p class="value" id="sum-kwh">0.000 kWh</p></div>
+    </div>
+    <div class="log-wrap" id="log-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Time</th><th>Cum. kWh</th></tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+
+    <h1 style="font-size:15px;">Signal trace</h1>
+    <p class="sub" style="margin-bottom:10px;">Brightness (solid), baseline (dashed), delta threshold (dotted). Green dots mark HI detections.</p>
+    <div id="trace-chart-wrap" style="background:var(--panel); border-radius:12px; padding:10px; margin-bottom:14px;"></div>
+    <div class="log-wrap" id="trace-log-wrap">
+      <table>
+        <thead><tr><th>t</th><th>bright</th><th>base</th><th>&Delta;</th><th>state</th></tr></thead>
+        <tbody id="trace-log-body"></tbody>
+      </table>
+    </div>
+
+    <button class="btn primary" id="export-btn">Export HTML report</button>
+    <button class="btn ghost" id="new-test-btn">Run another test</button>
+  </section>
+
+  <!-- SETTINGS SCREEN -->
+  <section id="screen-settings" class="screen panel-screen">
+    <div class="row-top">
+      <h1 style="margin:0;">Settings</h1>
+      <button class="back-btn" id="settings-back-btn">Done</button>
+    </div>
+    <div class="field">
+      <label for="set-scale">Pulses per kWh (meter constant)</label>
+      <input type="number" id="set-scale" min="1" step="1" value="1000">
+    </div>
+    <div class="field">
+      <label for="set-duration">Test duration (seconds)</label>
+      <input type="number" id="set-duration" min="5" step="1" value="60">
+    </div>
+    <div class="field">
+      <label for="set-sensitivity">Sensitivity <span id="sens-out">40</span></label>
+      <input type="range" id="set-sensitivity" min="1" max="100" value="40">
+      <div class="range-val">higher = detects smaller brightness changes</div>
+    </div>
+    <p class="sub" style="margin-top:24px;">Region of interest resets each time you open the camera. Draw a box tightly around just the LED for best results.</p>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- state ---------------- */
+  var settings = loadSettings();
+  var state = {
+    stream: null,
+    roi: null,            // {x,y,w,h} in preview (client) pixels
+    running: false,
+    pulseCount: 0,
+    log: [],               // [{t: msElapsed, cumKwh}]
+    trace: [],              // [{t, brightness, baseline, delta, hi}] throttled samples for calibration review
+    lastTraceT: 0,
+    startTime: 0,
+    timerHandle: null,
+    rafHandle: null,
+    detect: { state: 'low', baseline: null }
+  };
+
+  var els = {
+    video: document.getElementById('video'),
+    sampleCanvas: document.getElementById('sample-canvas'),
+    cameraWrap: document.getElementById('camera-wrap'),
+    roiBox: document.getElementById('roi-box'),
+    roiHint: document.getElementById('roi-hint'),
+    timerDisplay: document.getElementById('timer-display'),
+    pulseDisplay: document.getElementById('pulse-display'),
+    startBtn: document.getElementById('start-btn'),
+    settingsBtn: document.getElementById('settings-btn'),
+    resetRoiBtn: document.getElementById('reset-roi-btn'),
+    kwhLiveVal: document.getElementById('kwh-live-val'),
+    scaleLive: document.getElementById('scale-live'),
+    debugRow: document.getElementById('debug-row'),
+    debugState: document.getElementById('debug-state'),
+    debugBrightness: document.getElementById('debug-brightness'),
+    debugBaseline: document.getElementById('debug-baseline'),
+    debugDelta: document.getElementById('debug-delta'),
+
+    screens: {
+      capture: document.getElementById('screen-capture'),
+      summary: document.getElementById('screen-summary'),
+      settings: document.getElementById('screen-settings')
+    },
+
+    sumPulses: document.getElementById('sum-pulses'),
+    sumKwh: document.getElementById('sum-kwh'),
+    sumSub: document.getElementById('summary-sub'),
+    logBody: document.getElementById('log-body'),
+    traceChartWrap: document.getElementById('trace-chart-wrap'),
+    traceLogBody: document.getElementById('trace-log-body'),
+    exportBtn: document.getElementById('export-btn'),
+    newTestBtn: document.getElementById('new-test-btn'),
+
+    setScale: document.getElementById('set-scale'),
+    setDuration: document.getElementById('set-duration'),
+    setSensitivity: document.getElementById('set-sensitivity'),
+    sensOut: document.getElementById('sens-out'),
+    settingsBackBtn: document.getElementById('settings-back-btn')
+  };
+
+  /* ---------------- settings persistence ---------------- */
+  function loadSettings(){
+    var defaults = { pulsesPerKwh: 1000, duration: 60, sensitivity: 40 };
+    try{
+      var raw = localStorage.getItem('ebc_settings');
+      if(!raw) return defaults;
+      var parsed = JSON.parse(raw);
+      return {
+        pulsesPerKwh: Number(parsed.pulsesPerKwh) || defaults.pulsesPerKwh,
+        duration: Number(parsed.duration) || defaults.duration,
+        sensitivity: Number(parsed.sensitivity) || defaults.sensitivity
+      };
+    }catch(e){ return defaults; }
+  }
+  function saveSettings(){
+    try{ localStorage.setItem('ebc_settings', JSON.stringify(settings)); }catch(e){}
+  }
+
+  function applySettingsToUI(){
+    els.setScale.value = settings.pulsesPerKwh;
+    els.setDuration.value = settings.duration;
+    els.setSensitivity.value = settings.sensitivity;
+    els.sensOut.textContent = settings.sensitivity;
+    els.scaleLive.textContent = settings.pulsesPerKwh;
+    els.timerDisplay.textContent = formatTime(settings.duration);
+  }
+  applySettingsToUI();
+
+  els.setScale.addEventListener('change', function(){
+    settings.pulsesPerKwh = Math.max(1, Number(els.setScale.value) || 1000);
+    saveSettings(); applySettingsToUI();
+  });
+  els.setDuration.addEventListener('change', function(){
+    settings.duration = Math.max(5, Number(els.setDuration.value) || 60);
+    saveSettings(); applySettingsToUI();
+  });
+  els.setSensitivity.addEventListener('input', function(){
+    settings.sensitivity = Number(els.setSensitivity.value);
+    els.sensOut.textContent = settings.sensitivity;
+  });
+  els.setSensitivity.addEventListener('change', function(){ saveSettings(); });
+
+  /* ---------------- screen switching ---------------- */
+  function showScreen(name){
+    Object.keys(els.screens).forEach(function(k){
+      els.screens[k].classList.toggle('active', k === name);
+    });
+  }
+  els.settingsBtn.addEventListener('click', function(){ showScreen('settings'); });
+  els.settingsBackBtn.addEventListener('click', function(){ showScreen('capture'); });
+  els.newTestBtn.addEventListener('click', function(){
+    resetTestData();
+    showScreen('capture');
+  });
+
+  /* ---------------- camera ---------------- */
+  function initCamera(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      els.roiHint.textContent = 'camera not supported on this browser';
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    }).then(function(stream){
+      state.stream = stream;
+      els.video.srcObject = stream;
+    }).catch(function(err){
+      els.roiHint.textContent = 'camera access denied or unavailable';
+    });
+  }
+  initCamera();
+
+  /* ---------------- ROI selection (tap and drag) ---------------- */
+  var drag = null;
+  function pointerPos(e){
+    var rect = els.cameraWrap.getBoundingClientRect();
+    var p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+  }
+  function onDragStart(e){
+    if(state.running) return;
+    e.preventDefault();
+    var pos = pointerPos(e);
+    drag = { x0: pos.x, y0: pos.y };
+    els.roiBox.classList.add('set');
+    els.roiHint.style.display = 'none';
+  }
+  function onDragMove(e){
+    if(!drag) return;
+    e.preventDefault();
+    var pos = pointerPos(e);
+    var x = Math.min(drag.x0, pos.x), y = Math.min(drag.y0, pos.y);
+    var w = Math.abs(pos.x - drag.x0), h = Math.abs(pos.y - drag.y0);
+    state.roi = { x: x, y: y, w: w, h: h };
+    els.roiBox.style.left = x + 'px';
+    els.roiBox.style.top = y + 'px';
+    els.roiBox.style.width = w + 'px';
+    els.roiBox.style.height = h + 'px';
+  }
+  function onDragEnd(){
+    if(!drag) return;
+    drag = null;
+    if(state.roi && (state.roi.w < 20 || state.roi.h < 20)){
+      // too small to be usable, discard
+      state.roi = null;
+      els.roiBox.classList.remove('set');
+      els.roiHint.style.display = '';
+    } else if(state.roi){
+      startMonitorLoop();
+    }
+  }
+  els.cameraWrap.addEventListener('mousedown', onDragStart);
+  els.cameraWrap.addEventListener('touchstart', onDragStart, { passive: false });
+  window.addEventListener('mousemove', onDragMove);
+  window.addEventListener('touchmove', onDragMove, { passive: false });
+  window.addEventListener('mouseup', onDragEnd);
+  window.addEventListener('touchend', onDragEnd);
+
+  els.resetRoiBtn.addEventListener('click', function(){
+    state.roi = null;
+    els.roiBox.classList.remove('set');
+    els.roiHint.style.display = '';
+    els.debugRow.style.display = 'none';
+    stopMonitorLoop();
+  });
+
+  /* ---------------- blink detection ---------------- */
+  // Assumption: no fixed brightness threshold works across meters/lighting, so this
+  // uses an adaptive baseline (slow-moving average of the "low" brightness level) plus
+  // a sensitivity-derived delta and hysteresis band, to reduce false triggers from
+  // ambient light drift. This logic is a design choice, not something specified in the
+  // original brief, and will likely need real-world tuning against your actual meter.
+  function deltaFromSensitivity(){
+    // sensitivity 1..100 -> required brightness jump 60..5 (higher sensitivity = smaller jump needed)
+    var d = 60 - (settings.sensitivity / 100) * 55;
+    return Math.max(5, Math.min(60, d));
+  }
+
+  function sampleBrightness(){
+    var video = els.video;
+    if(!state.roi || video.videoWidth === 0) return null;
+
+    var displayW = els.cameraWrap.clientWidth;
+    var displayH = els.cameraWrap.clientHeight;
+    var videoW = video.videoWidth, videoH = video.videoHeight;
+    var scale = Math.max(displayW / videoW, displayH / videoH);
+    var renderedW = videoW * scale, renderedH = videoH * scale;
+    var offsetX = (renderedW - displayW) / 2;
+    var offsetY = (renderedH - displayH) / 2;
+
+    var sx = (state.roi.x + offsetX) / scale;
+    var sy = (state.roi.y + offsetY) / scale;
+    var sw = state.roi.w / scale;
+    var sh = state.roi.h / scale;
+    if(sw <= 0 || sh <= 0) return null;
+
+    var ctx = els.sampleCanvas.getContext('2d');
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, 24, 24);
+    var data;
+    try{
+      data = ctx.getImageData(0, 0, 24, 24).data;
+    }catch(e){ return null; }
+
+    var sum = 0, n = data.length / 4;
+    for(var i = 0; i < data.length; i += 4){
+      sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+    }
+    return sum / n;
+  }
+
+  function detectionTick(){
+    if(!state.roi){ state.rafHandle = null; return; }
+    var brightness = sampleBrightness();
+    if(brightness !== null){
+      var d = state.detect;
+      var delta = deltaFromSensitivity();
+      if(d.baseline === null) d.baseline = brightness;
+
+      if(d.state === 'low'){
+        if(brightness > d.baseline + delta){
+          d.state = 'high';
+          if(state.running) registerPulse();
+        } else {
+          d.baseline = d.baseline * 0.97 + brightness * 0.03;
+        }
+      } else {
+        if(brightness < d.baseline + delta * 0.5){
+          d.state = 'low';
+        }
+      }
+
+      els.debugRow.style.display = 'flex';
+      els.debugState.textContent = d.state === 'high' ? 'HI' : 'LO';
+      els.debugState.className = 'pill small ' + (d.state === 'high' ? 'hi' : 'lo');
+      els.debugBrightness.textContent = brightness.toFixed(0);
+      els.debugBaseline.textContent = d.baseline.toFixed(0);
+      els.debugDelta.textContent = delta.toFixed(0);
+
+      if(state.running){
+        var nowMs = Date.now() - state.startTime;
+        if(nowMs - state.lastTraceT >= 150){
+          state.lastTraceT = nowMs;
+          state.trace.push({ t: nowMs, brightness: brightness, baseline: d.baseline, delta: delta, hi: d.state === 'high' });
+        }
+      }
+    }
+    state.rafHandle = requestAnimationFrame(detectionTick);
+  }
+
+  function startMonitorLoop(){
+    if(state.rafHandle) return;
+    state.rafHandle = requestAnimationFrame(detectionTick);
+  }
+  function stopMonitorLoop(){
+    if(state.rafHandle){ cancelAnimationFrame(state.rafHandle); state.rafHandle = null; }
+  }
+
+  function registerPulse(){
+    state.pulseCount++;
+    var elapsedMs = Date.now() - state.startTime;
+    var cumKwh = state.pulseCount / settings.pulsesPerKwh;
+    state.log.push({ t: elapsedMs, cumKwh: cumKwh });
+    els.pulseDisplay.textContent = state.pulseCount + ' pulses';
+    els.kwhLiveVal.textContent = cumKwh.toFixed(3);
+  }
+
+  /* ---------------- test run / timer / buzzer ---------------- */
+  function resetTestData(){
+    state.pulseCount = 0;
+    state.log = [];
+    state.trace = [];
+    state.lastTraceT = 0;
+    state.detect = { state: 'low', baseline: null };
+    els.pulseDisplay.textContent = '0 pulses';
+    els.kwhLiveVal.textContent = '0.000';
+    els.timerDisplay.textContent = formatTime(settings.duration);
+  }
+
+  function formatTime(sec){
+    sec = Math.max(0, Math.round(sec));
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function startTest(){
+    if(!state.roi){
+      els.roiHint.style.display = '';
+      els.roiHint.textContent = 'select the LED region first';
+      return;
+    }
+    resetTestData();
+    state.running = true;
+    state.startTime = Date.now();
+    els.startBtn.classList.add('running');
+
+    startMonitorLoop();
+
+    state.timerHandle = setInterval(function(){
+      var elapsed = (Date.now() - state.startTime) / 1000;
+      var remaining = settings.duration - elapsed;
+      els.timerDisplay.textContent = formatTime(remaining);
+      if(remaining <= 0) finishTest();
+    }, 200);
+  }
+
+  function finishTest(){
+    state.running = false;
+    clearInterval(state.timerHandle);
+    els.startBtn.classList.remove('running');
+    playBuzzer();
+    showSummary();
+  }
+
+  els.startBtn.addEventListener('click', function(){
+    if(state.running) finishTest(); else startTest();
+  });
+
+  function playBuzzer(){
+    try{
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.28].forEach(function(offset){
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.22);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + 0.25);
+      });
+    }catch(e){ /* audio not available, fail silently */ }
+  }
+
+  function buildTraceSvg(trace, durationS){
+    var w = 600, h = 200, pad = 34;
+    if(trace.length === 0){
+      return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%"><text x="' + (w/2) + '" y="' + (h/2) + '" font-size="12" fill="#888" text-anchor="middle">no samples recorded</text></svg>';
+    }
+    var vals = [];
+    trace.forEach(function(s){ vals.push(s.brightness, s.baseline, s.baseline + s.delta); });
+    var minV = Math.min.apply(null, vals), maxV = Math.max.apply(null, vals);
+    if(maxV - minV < 1){ maxV += 1; minV -= 1; }
+    var maxT = durationS * 1000;
+
+    function xOf(t){ return pad + (t / maxT) * (w - pad * 2); }
+    function yOf(v){ return h - pad - ((v - minV) / (maxV - minV)) * (h - pad * 2); }
+
+    var brightPts = trace.map(function(s){ return xOf(s.t).toFixed(1) + ',' + yOf(s.brightness).toFixed(1); }).join(' ');
+    var basePts = trace.map(function(s){ return xOf(s.t).toFixed(1) + ',' + yOf(s.baseline).toFixed(1); }).join(' ');
+    var deltaPts = trace.map(function(s){ return xOf(s.t).toFixed(1) + ',' + yOf(s.baseline + s.delta).toFixed(1); }).join(' ');
+    var hiDots = trace.filter(function(s){ return s.hi; }).map(function(s){
+      return '<circle cx="' + xOf(s.t).toFixed(1) + '" cy="' + yOf(s.brightness).toFixed(1) + '" r="2.5" fill="#3ddc84"/>';
+    }).join('');
+
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-width:600px">' +
+      '<line x1="' + pad + '" y1="' + (h - pad) + '" x2="' + (w - pad) + '" y2="' + (h - pad) + '" stroke="#666"/>' +
+      '<line x1="' + pad + '" y1="' + pad + '" x2="' + pad + '" y2="' + (h - pad) + '" stroke="#666"/>' +
+      '<polyline points="' + deltaPts + '" fill="none" stroke="#e0a83a" stroke-width="1.5" stroke-dasharray="2,3"/>' +
+      '<polyline points="' + basePts + '" fill="none" stroke="#9aa1a8" stroke-width="1.5" stroke-dasharray="5,4"/>' +
+      '<polyline points="' + brightPts + '" fill="none" stroke="#f2f3f4" stroke-width="1.8"/>' +
+      hiDots +
+      '<text x="' + pad + '" y="' + (h - 8) + '" font-size="10" fill="#888">0s</text>' +
+      '<text x="' + (w - pad - 24) + '" y="' + (h - 8) + '" font-size="10" fill="#888">' + durationS + 's</text>' +
+      '</svg>';
+  }
+
+  function buildTraceRows(trace){
+    return trace.map(function(s){
+      return '<tr><td>' + (s.t / 1000).toFixed(1) + 's</td><td>' + s.brightness.toFixed(0) + '</td><td>' + s.baseline.toFixed(0) +
+        '</td><td>' + s.delta.toFixed(0) + '</td><td>' + (s.hi ? 'HI' : 'lo') + '</td></tr>';
+    }).join('');
+  }
+
+  /* ---------------- summary screen ---------------- */
+  function showSummary(){
+    var totalKwh = state.pulseCount / settings.pulsesPerKwh;
+    els.sumPulses.textContent = state.pulseCount;
+    els.sumKwh.textContent = totalKwh.toFixed(3) + ' kWh';
+    els.sumSub.textContent = settings.duration + 's run finished';
+
+    els.logBody.innerHTML = '';
+    state.log.forEach(function(entry, i){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + (entry.t / 1000).toFixed(1) + 's</td><td>' + entry.cumKwh.toFixed(3) + '</td>';
+      els.logBody.appendChild(tr);
+    });
+
+    els.traceChartWrap.innerHTML = buildTraceSvg(state.trace, settings.duration);
+    els.traceLogBody.innerHTML = buildTraceRows(state.trace);
+
+    showScreen('summary');
+  }
+
+  /* ---------------- export standalone HTML report ---------------- */
+  els.exportBtn.addEventListener('click', function(){
+    var html = buildReportHtml();
+    var blob = new Blob([html], { type: 'text/html' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = 'energy-blink-report-' + stamp + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  });
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  function buildReportHtml(){
+    var totalKwh = state.pulseCount / settings.pulsesPerKwh;
+    var durationS = settings.duration;
+    var when = new Date().toString();
+
+    var rows = state.log.map(function(entry, i){
+      return '<tr><td>' + (i + 1) + '</td><td>' + (entry.t / 1000).toFixed(1) + 's</td><td>' + entry.cumKwh.toFixed(3) + '</td></tr>';
+    }).join('');
+
+    // Hand-drawn inline SVG chart (cumulative kWh over time) so the export has
+    // zero external dependencies and truly works offline in any browser.
+    var chartW = 640, chartH = 240, pad = 36;
+    var maxT = durationS, maxKwh = totalKwh || 1;
+    var points = state.log.map(function(entry){
+      var x = pad + (entry.t / 1000 / maxT) * (chartW - pad * 2);
+      var y = chartH - pad - (entry.cumKwh / maxKwh) * (chartH - pad * 2);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    // ensure the line starts at (0,0) and ends at final time
+    var polyPoints = (pad + ',' + (chartH - pad)) + (points.length ? ' ' + points.join(' ') : '');
+
+    var svgChart = '<svg viewBox="0 0 ' + chartW + ' ' + chartH + '" width="100%" style="max-width:640px">' +
+      '<line x1="' + pad + '" y1="' + (chartH - pad) + '" x2="' + (chartW - pad) + '" y2="' + (chartH - pad) + '" stroke="#666"/>' +
+      '<line x1="' + pad + '" y1="' + pad + '" x2="' + pad + '" y2="' + (chartH - pad) + '" stroke="#666"/>' +
+      '<polyline points="' + polyPoints + '" fill="none" stroke="#3ddc84" stroke-width="2"/>' +
+      '<text x="' + pad + '" y="' + (chartH - 10) + '" font-size="11" fill="#888">0s</text>' +
+      '<text x="' + (chartW - pad - 30) + '" y="' + (chartH - 10) + '" font-size="11" fill="#888">' + maxT + 's</text>' +
+      '<text x="4" y="' + pad + '" font-size="11" fill="#888">' + maxKwh.toFixed(3) + '</text>' +
+      '</svg>';
+
+    var traceSvg = buildTraceSvg(state.trace, durationS);
+    var traceRows = buildTraceRows(state.trace);
+
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+      '<title>Energy Blink Counter Report</title><style>' +
+      'body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0b0d0f;color:#f2f3f4;padding:24px;max-width:720px;margin:0 auto;}' +
+      'h1{font-size:20px;} h2{font-size:15px;margin-top:28px;} .sub{color:#9aa1a8;font-size:13px;}' +
+      '.stats{display:flex;gap:16px;margin:20px 0;} .stat{background:#15181c;border-radius:12px;padding:16px;flex:1;}' +
+      '.stat .label{color:#9aa1a8;font-size:12px;margin:0 0 4px;} .stat .value{font-size:22px;font-weight:600;margin:0;}' +
+      'table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;}' +
+      'th,td{padding:6px 10px;border-bottom:1px solid #2a2f36;text-align:left;} th{color:#9aa1a8;font-weight:500;}' +
+      '.chart-box{background:#15181c;border-radius:12px;padding:10px;}' +
+      '.log-scroll{max-height:260px;overflow-y:auto;}' +
+      '</style></head><body>' +
+      '<h1>Energy blink counter report</h1>' +
+      '<p class="sub">' + escapeHtml(when) + ' &middot; ' + durationS + 's test &middot; ' + settings.pulsesPerKwh + ' imp/kWh</p>' +
+      '<div class="stats">' +
+        '<div class="stat"><p class="label">Total pulses</p><p class="value">' + state.pulseCount + '</p></div>' +
+        '<div class="stat"><p class="label">Total energy</p><p class="value">' + totalKwh.toFixed(3) + ' kWh</p></div>' +
+      '</div>' +
+      svgChart +
+      '<h2>Pulse log</h2>' +
+      '<div class="log-scroll"><table><thead><tr><th>#</th><th>Time</th><th>Cumulative kWh</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<h2>Signal trace</h2>' +
+      '<p class="sub">Brightness (solid), baseline (dashed), delta threshold (dotted). Green dots mark HI detections.</p>' +
+      '<div class="chart-box">' + traceSvg + '</div>' +
+      '<div class="log-scroll"><table><thead><tr><th>t</th><th>bright</th><th>base</th><th>delta</th><th>state</th></tr></thead><tbody>' + traceRows + '</tbody></table></div>' +
+      '</body></html>';
+  }
+
+  /* ---------------- PWA: inline manifest + service worker ---------------- */
+  (function setupPwa(){
+    var manifest = {
+      name: 'Energy Blink Counter',
+      short_name: 'BlinkCounter',
+      start_url: '.',
+      display: 'standalone',
+      background_color: '#0b0d0f',
+      theme_color: '#0b0d0f',
+      icons: []
+    };
+    var manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    var link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = URL.createObjectURL(manifestBlob);
+    document.head.appendChild(link);
+
+    if('serviceWorker' in navigator){
+      var swSource = "self.addEventListener('fetch', function(e){});";
+      var swBlob = new Blob([swSource], { type: 'application/javascript' });
+      var swUrl = URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl).catch(function(){ /* offline install not critical */ });
+    }
+  })();
+
+})();
+</script>
+</body>
+</html>
