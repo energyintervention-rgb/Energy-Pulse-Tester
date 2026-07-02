@@ -89,11 +89,11 @@ for while you're present and watching it.
 ## CSV export
 
 Available from the summary screen after any run (Test or Collector).
-Columns: `timestamp` (ISO 8601, absolute), `elapsed_seconds`,
-`pulse_number`, `cumulative_kWh`. A few `#`-prefixed metadata lines
-(mode, meter constant, generated-at) sit above the header row — standard
-CSV readers and Excel/Sheets tolerate this fine, but if you're parsing it
-programmatically, skip lines starting with `#`.
+Columns: `timestamp_utc` (ISO 8601), `device_local_time`,
+`elapsed_seconds`, `pulse_number`, `cumulative_kWh`. A few `#`-prefixed
+metadata lines (mode, meter constant, generated-at, GPS) sit above the
+header row — standard CSV readers and Excel/Sheets tolerate this fine,
+but if you're parsing it programmatically, skip lines starting with `#`.
 
 For long Collector runs, the on-screen pulse-log table caps at the most
 recent 200 rows for display performance — the CSV export always contains
@@ -153,10 +153,15 @@ way, not something gained by calling the Geolocation API separately.
 **Where it shows up:**
 - Summary screen: a GPS status line (coordinates + accuracy, or an
   "unavailable" reason if it failed/was denied)
-- CSV export: a `# gps:` metadata comment line, plus `latitude`,
-  `longitude`, `gps_accuracy_m` columns on every row, plus a
-  `device_local_time` column (human-readable, alongside the existing
-  ISO/UTC `timestamp_utc` column)
+- CSV export: a `# gps:` metadata comment line only (coordinates and
+  accuracy are not repeated as per-row columns — every row in a given
+  export is from the same run, so the single metadata line covers it).
+  Row columns are `timestamp_utc`, `device_local_time`,
+  `elapsed_seconds`, `pulse_number`, `cumulative_kWh`.
+  `device_local_time` and `elapsed_seconds` are computed from the exact
+  same instant in the code (`state.startTime + entry.t`) — one is just
+  that instant shown as a clock time, the other as seconds since the run
+  started. They always align by construction, not by a separate check.
 - HTML report export: same GPS line as the summary screen
 
 **Known limitation:** GPS accuracy on phones without a clear sky view
