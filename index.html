@@ -198,7 +198,7 @@
     calibrating: false,
     location: null,        // {lat, lon, accuracy} captured once at run start, or null/error string
     locationStatus: 'not requested',
-    detect: { state: 'low', baseline: null }
+    detect: { state: 'low', baseline: null, pulseDir: null }
   };
 
   var els = {
@@ -505,7 +505,7 @@
     saveSettings();
 
     // reset detection baseline so the new threshold takes effect immediately
-    state.detect = { state: 'low', baseline: null };
+    state.detect = { state: 'low', baseline: null, pulseDir: null };
 
     els.roiHint.textContent = 'calibrated: swing ' + range.toFixed(0) + ' -> sensitivity ' + newSensitivity;
   }
@@ -552,14 +552,29 @@
 
       if(d.state === 'low'){
         if(brightness > d.baseline + delta){
+          // brightness rose sharply — LED pulse shows as a brightness increase
           d.state = 'high';
+          d.pulseDir = 'rise';
+          if(state.running) registerPulse();
+        } else if(brightness < d.baseline - delta){
+          // brightness dropped sharply — LED pulse shows as a brightness decrease
+          // (confirmed pattern from real test data: bright resting level, pulse dips below it)
+          d.state = 'high';
+          d.pulseDir = 'dip';
           if(state.running) registerPulse();
         } else {
+          // resting — baseline drifts slowly toward current brightness
           d.baseline = d.baseline * 0.97 + brightness * 0.03;
         }
       } else {
-        if(brightness < d.baseline + delta * 0.5){
-          d.state = 'low';
+        if(d.pulseDir === 'dip'){
+          if(brightness > d.baseline - delta * 0.5){
+            d.state = 'low';
+          }
+        } else {
+          if(brightness < d.baseline + delta * 0.5){
+            d.state = 'low';
+          }
         }
       }
 
@@ -604,7 +619,7 @@
     state.log = [];
     state.trace = [];
     state.lastTraceT = 0;
-    state.detect = { state: 'low', baseline: null };
+    state.detect = { state: 'low', baseline: null, pulseDir: null };
     els.pulseDisplay.textContent = '0 pulses';
     els.kwhLiveVal.textContent = '0.000';
     els.timerDisplay.textContent = settings.mode === 'collector' ? '00:00' : formatTime(settings.duration);
