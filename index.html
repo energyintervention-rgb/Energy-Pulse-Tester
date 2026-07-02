@@ -330,10 +330,11 @@
     });
   }
   els.settingsBtn.addEventListener('click', function(){ showScreen('settings'); });
-  els.settingsBackBtn.addEventListener('click', function(){ showScreen('capture'); });
+  els.settingsBackBtn.addEventListener('click', function(){ showScreen('capture'); ensureCameraAlive(); });
   els.newTestBtn.addEventListener('click', function(){
     resetTestData();
     showScreen('capture');
+    ensureCameraAlive();
   });
 
   /* ---------------- camera ---------------- */
@@ -378,6 +379,31 @@
   els.video.addEventListener('error', function(){
     els.roiHint.textContent = 'video stream error';
   });
+
+  // Some mobile browsers pause or kill the camera stream when the tab loses
+  // foreground — which happens when the file-save/share dialog opens for
+  // Export HTML/CSV. Confirmed behavior: after export, camera goes black and
+  // stays black (reset-region does not fix it) — the stream itself is dead,
+  // not just the ROI overlay. This checks whether the stream's video track(s)
+  // are still live, and restarts the camera if not.
+  function ensureCameraAlive(){
+    if(!state.stream){
+      initCamera();
+      return;
+    }
+    var tracks = state.stream.getVideoTracks();
+    var dead = tracks.length === 0 || tracks.every(function(t){ return t.readyState === 'ended'; });
+    if(dead){
+      initCamera();
+    } else if(els.video.paused){
+      attemptPlay();
+    }
+  }
+
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden) ensureCameraAlive();
+  });
+  window.addEventListener('pageshow', function(){ ensureCameraAlive(); });
 
   initCamera();
 
@@ -842,7 +868,7 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+    setTimeout(function(){ URL.revokeObjectURL(url); ensureCameraAlive(); }, 2000);
   });
 
   /* ---------------- export standalone HTML report ---------------- */
@@ -857,7 +883,7 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+    setTimeout(function(){ URL.revokeObjectURL(url); ensureCameraAlive(); }, 2000);
   });
 
   function escapeHtml(s){
