@@ -21,7 +21,8 @@ calibration-review chart. Single HTML file, no build step, no dependencies.
   manual tuning before running a test
 - Audible buzzer (Web Audio, no sound file) when a test completes
 - Summary screen: pulse count, energy total, pulse log, and a signal-trace
-  chart (brightness / baseline / delta / HI markers over time)
+  chart and table (brightness / baseline / delta / HI markers / cumulative
+  kWh over time)
 - Export: generates a standalone, fully offline HTML report (inline SVG
   charts, no external CDN) with pulse log and signal trace, downloadable
   via the browser
