@@ -128,7 +128,8 @@
 
     <div id="trace-section">
       <h1 style="font-size:15px;">Signal trace</h1>
-      <p class="sub" style="margin-bottom:10px;">Brightness (solid), baseline (dashed), delta threshold (dotted). Green dots mark HI detections.</p>
+      <p class="sub" style="margin-bottom:10px;">Brightness, baseline, delta threshold, and HI detections over time.</p>
+      <div id="trace-legend-wrap"></div>
       <div id="trace-chart-wrap" style="background:var(--panel); border-radius:12px; padding:10px; margin-bottom:14px;"></div>
       <div class="log-wrap" id="trace-log-wrap">
         <table>
@@ -236,6 +237,7 @@
     locationStatus: document.getElementById('location-status'),
     logBody: document.getElementById('log-body'),
     traceChartWrap: document.getElementById('trace-chart-wrap'),
+    traceLegendWrap: document.getElementById('trace-legend-wrap'),
     traceLogBody: document.getElementById('trace-log-body'),
     traceSection: document.getElementById('trace-section'),
     exportBtn: document.getElementById('export-btn'),
@@ -756,6 +758,15 @@
     }catch(e){ /* audio not available, fail silently */ }
   }
 
+  function buildTraceLegend(){
+    return '<div class="trace-legend" style="display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-dim,#9aa1a8); align-items:center; margin-bottom:10px;">' +
+      '<span style="display:flex; align-items:center; gap:6px;"><svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#f2f3f4" stroke-width="1.8"/></svg>Brightness</span>' +
+      '<span style="display:flex; align-items:center; gap:6px;"><svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#9aa1a8" stroke-width="1.5" stroke-dasharray="5,4"/></svg>Baseline</span>' +
+      '<span style="display:flex; align-items:center; gap:6px;"><svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#e0a83a" stroke-width="1.5" stroke-dasharray="2,3"/></svg>Delta threshold</span>' +
+      '<span style="display:flex; align-items:center; gap:6px;"><svg width="20" height="10"><circle cx="10" cy="5" r="2.5" fill="#3ddc84"/></svg>HI detection</span>' +
+      '</div>';
+  }
+
   function buildTraceSvg(trace, durationS){
     var w = 600, h = 200, pad = 34;
     if(trace.length === 0){
@@ -829,6 +840,7 @@
 
     els.traceSection.style.display = isCollector ? 'none' : '';
     if(!isCollector){
+      els.traceLegendWrap.innerHTML = buildTraceLegend();
       els.traceChartWrap.innerHTML = buildTraceSvg(state.trace, settings.duration);
       els.traceLogBody.innerHTML = buildTraceRows(state.trace);
     }
@@ -950,7 +962,8 @@
       '<h2>Pulse log</h2>' +
       '<div class="log-scroll"><table><thead><tr><th>#</th><th>Time</th><th>Cumulative kWh</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<h2>Signal trace</h2>' +
-      '<p class="sub">Brightness (solid), baseline (dashed), delta threshold (dotted). Green dots mark HI detections.</p>' +
+      '<p class="sub">Brightness, baseline, delta threshold, and HI detections over time.</p>' +
+      buildTraceLegend() +
       '<div class="chart-box">' + traceSvg + '</div>' +
       '<div class="log-scroll"><table><thead><tr><th>t</th><th>bright</th><th>base</th><th>delta</th><th>state</th><th>kWh</th></tr></thead><tbody>' + traceRows + '</tbody></table></div>' +
       '</body></html>';
