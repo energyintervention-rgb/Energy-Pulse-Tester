@@ -151,21 +151,12 @@
       <button class="back-btn" id="settings-back-btn">Done</button>
     </div>
     <div class="field">
-      <label>Mode</label>
-      <div style="display:flex; gap:8px;">
-        <button class="btn" id="mode-test-btn" style="margin-bottom:0;">Test</button>
-        <button class="btn" id="mode-collector-btn" style="margin-bottom:0;">Collector</button>
-      </div>
-      <div class="range-val" id="mode-hint">Test: fixed-duration check with a summary. Collector: runs continuously until stopped, logs every pulse, export as CSV.</div>
-    </div>
-    <div class="field">
       <label for="set-scale">Pulses per kWh (meter constant)</label>
       <input type="number" id="set-scale" min="1" step="1" value="1000">
     </div>
     <div class="field" id="duration-field">
       <label for="set-duration">Test duration (seconds)</label>
       <input type="number" id="set-duration" min="5" step="1" value="60">
-      <div class="range-val">only used in Test mode</div>
     </div>
     <div class="field">
       <label for="set-sensitivity">Sensitivity <span id="sens-out">40</span></label>
@@ -247,9 +238,6 @@
     setDuration: document.getElementById('set-duration'),
     setSensitivity: document.getElementById('set-sensitivity'),
     setCalDuration: document.getElementById('set-cal-duration'),
-    modeTestBtn: document.getElementById('mode-test-btn'),
-    modeCollectorBtn: document.getElementById('mode-collector-btn'),
-    modeHint: document.getElementById('mode-hint'),
     durationField: document.getElementById('duration-field'),
     exportCsvBtn: document.getElementById('export-csv-btn'),
     sensOut: document.getElementById('sens-out'),
@@ -258,7 +246,7 @@
 
   /* ---------------- settings persistence ---------------- */
   function loadSettings(){
-    var defaults = { pulsesPerKwh: 1000, duration: 60, sensitivity: 40, calDuration: 4, mode: 'test' };
+    var defaults = { pulsesPerKwh: 1000, duration: 60, sensitivity: 40, calDuration: 4 };
     try{
       var raw = localStorage.getItem('ebc_settings');
       if(!raw) return defaults;
@@ -267,8 +255,7 @@
         pulsesPerKwh: Number(parsed.pulsesPerKwh) || defaults.pulsesPerKwh,
         duration: Number(parsed.duration) || defaults.duration,
         sensitivity: Number(parsed.sensitivity) || defaults.sensitivity,
-        calDuration: Number(parsed.calDuration) || defaults.calDuration,
-        mode: (parsed.mode === 'collector') ? 'collector' : 'test'
+        calDuration: Number(parsed.calDuration) || defaults.calDuration
       };
     }catch(e){ return defaults; }
   }
@@ -284,20 +271,9 @@
     els.sensOut.textContent = settings.sensitivity;
     els.scaleLive.textContent = settings.pulsesPerKwh;
 
-    var isCollector = settings.mode === 'collector';
-    els.modeTestBtn.className = 'btn' + (isCollector ? ' ghost' : ' primary');
-    els.modeCollectorBtn.className = 'btn' + (isCollector ? ' primary' : ' ghost');
-    els.modeTestBtn.style.marginBottom = '0';
-    els.modeCollectorBtn.style.marginBottom = '0';
-    els.modeHint.textContent = isCollector
-      ? 'Collector: runs continuously until stopped, logs every pulse with a timestamp, export as CSV. Phone/laptop must stay awake and the tab in view — it will not run in the background or with the screen off.'
-      : 'Test: fixed-duration check, shows a summary at the end.';
-    els.durationField.style.opacity = isCollector ? '0.5' : '1';
-    els.setDuration.disabled = isCollector;
-
     if(!state.running){
-      els.timerDisplay.textContent = isCollector ? '00:00' : formatTime(settings.duration);
-      els.startBtn.setAttribute('aria-label', isCollector ? 'Start collecting' : 'Start test');
+      els.timerDisplay.textContent = formatTime(settings.duration);
+      els.startBtn.setAttribute('aria-label', 'Start test');
     }
   }
   applySettingsToUI();
@@ -319,14 +295,6 @@
     settings.calDuration = Math.max(1, Math.min(30, Number(els.setCalDuration.value) || 4));
     saveSettings(); applySettingsToUI();
   });
-
-  function setMode(mode){
-    if(state.running) return; // don't allow switching mid-run
-    settings.mode = mode;
-    saveSettings(); applySettingsToUI();
-  }
-  els.modeTestBtn.addEventListener('click', function(){ setMode('test'); });
-  els.modeCollectorBtn.addEventListener('click', function(){ setMode('collector'); });
 
   /* ---------------- screen switching ---------------- */
   function showScreen(name){
@@ -616,7 +584,7 @@
       els.debugBaseline.textContent = d.baseline.toFixed(0);
       els.debugDelta.textContent = delta.toFixed(0);
 
-      if(state.running && settings.mode !== 'collector'){
+      if(state.running){
         var nowMs = Date.now() - state.startTime;
         if(nowMs - state.lastTraceT >= 150){
           state.lastTraceT = nowMs;
@@ -653,7 +621,7 @@
     state.detect = { state: 'low', baseline: null, pulseDir: null };
     els.pulseDisplay.textContent = '0 pulses';
     els.kwhLiveVal.textContent = '0.000';
-    els.timerDisplay.textContent = settings.mode === 'collector' ? '00:00' : formatTime(settings.duration);
+    els.timerDisplay.textContent = formatTime(settings.duration);
   }
 
   function formatTime(sec){
@@ -713,19 +681,12 @@
 
     startMonitorLoop();
 
-    if(settings.mode === 'collector'){
-      state.timerHandle = setInterval(function(){
-        var elapsed = (Date.now() - state.startTime) / 1000;
-        els.timerDisplay.textContent = formatTime(elapsed);
-      }, 200);
-    } else {
-      state.timerHandle = setInterval(function(){
-        var elapsed = (Date.now() - state.startTime) / 1000;
-        var remaining = settings.duration - elapsed;
-        els.timerDisplay.textContent = formatTime(remaining);
-        if(remaining <= 0) finishTest();
-      }, 200);
-    }
+    state.timerHandle = setInterval(function(){
+      var elapsed = (Date.now() - state.startTime) / 1000;
+      var remaining = settings.duration - elapsed;
+      els.timerDisplay.textContent = formatTime(remaining);
+      if(remaining <= 0) finishTest();
+    }, 200);
   }
 
   function finishTest(){
@@ -811,39 +772,20 @@
   function showSummary(){
     updateLocationUI();
     var totalKwh = state.pulseCount / settings.pulsesPerKwh;
-    var isCollector = settings.mode === 'collector';
-    var elapsedS = (Date.now() - state.startTime) / 1000;
     els.sumPulses.textContent = state.pulseCount;
     els.sumKwh.textContent = totalKwh.toFixed(3) + ' kWh';
-    els.sumSub.textContent = isCollector
-      ? ('Collector run: ' + formatTime(elapsedS) + ' elapsed')
-      : (settings.duration + 's run finished');
+    els.sumSub.textContent = settings.duration + 's run finished';
 
     els.logBody.innerHTML = '';
-    var rowsToShow = state.log;
-    var capped = false;
-    if(isCollector && state.log.length > 200){
-      rowsToShow = state.log.slice(-200);
-      capped = true;
-    }
-    rowsToShow.forEach(function(entry){
-      var i = state.log.indexOf(entry);
+    state.log.forEach(function(entry, i){
       var tr = document.createElement('tr');
       tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + (entry.t / 1000).toFixed(1) + 's</td><td>' + entry.cumKwh.toFixed(3) + '</td>';
       els.logBody.appendChild(tr);
     });
-    if(capped){
-      var note = document.createElement('tr');
-      note.innerHTML = '<td colspan="3" style="color:var(--text-dim);">showing last 200 of ' + state.log.length + ' pulses — full log is in the CSV export</td>';
-      els.logBody.insertBefore(note, els.logBody.firstChild);
-    }
 
-    els.traceSection.style.display = isCollector ? 'none' : '';
-    if(!isCollector){
-      els.traceLegendWrap.innerHTML = buildTraceLegend();
-      els.traceChartWrap.innerHTML = buildTraceSvg(state.trace, settings.duration);
-      els.traceLogBody.innerHTML = buildTraceRows(state.trace);
-    }
+    els.traceLegendWrap.innerHTML = buildTraceLegend();
+    els.traceChartWrap.innerHTML = buildTraceSvg(state.trace, settings.duration);
+    els.traceLogBody.innerHTML = buildTraceRows(state.trace);
 
     showScreen('summary');
   }
@@ -853,7 +795,6 @@
     var lines = [];
     var hasGps = !!state.location;
     lines.push('# Energy Pulse Counter export');
-    lines.push('# mode: ' + settings.mode);
     lines.push('# pulses_per_kWh: ' + settings.pulsesPerKwh);
     lines.push('# generated: ' + new Date().toString());
     lines.push('# gps: ' + (hasGps
@@ -879,7 +820,7 @@
     var a = document.createElement('a');
     var stamp = new Date().toISOString().replace(/[:.]/g, '-');
     a.href = url;
-    a.download = 'energy-pulse-counter-' + settings.mode + '-' + stamp + '.csv';
+    a.download = 'energy-pulse-counter-' + stamp + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
