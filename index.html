@@ -74,6 +74,16 @@
   th,td{padding:6px 8px; border-bottom:1px solid var(--border); text-align:left;}
   th{color:var(--text-dim); font-weight:500;}
   .log-wrap{max-height:220px; overflow-y:auto; background:var(--panel); border-radius:10px; padding:8px 4px; margin-bottom:20px;}
+
+  .focus-modal{position:fixed; inset:0; background:rgba(5,6,7,0.97); z-index:1000;
+    display:none; flex-direction:column; padding:16px; overflow:auto;}
+  .focus-modal.active{display:flex;}
+  .focus-content{flex:1; padding-top:8px;}
+  .focus-content h2{font-size:16px; margin:0 0 16px;}
+  .focus-content svg{width:100%; height:auto; max-width:none;}
+  .focus-content table{width:100%; border-collapse:collapse; font-size:16px;}
+  .focus-content th,.focus-content td{padding:10px 12px; border-bottom:1px solid var(--border); text-align:left;}
+  .focus-content th{color:var(--text-dim); font-weight:500; position:sticky; top:0; background:var(--bg);}
 </style>
 </head>
 <body>
@@ -119,6 +129,10 @@
       <div class="stat-card"><p class="label">Pulses</p><p class="value" id="sum-pulses">0</p></div>
       <div class="stat-card"><p class="label">Energy</p><p class="value" id="sum-kwh">0.000 kWh</p></div>
     </div>
+    <div class="row-top" style="margin-bottom:8px;">
+      <h1 style="margin:0; font-size:15px;">Pulse log</h1>
+      <button class="back-btn" id="zoom-log-btn">Zoom</button>
+    </div>
     <div class="log-wrap" id="log-wrap">
       <table>
         <thead><tr><th>#</th><th>Time</th><th>Cum. kWh</th></tr></thead>
@@ -127,10 +141,17 @@
     </div>
 
     <div id="trace-section">
-      <h1 style="font-size:15px;">Signal trace</h1>
+      <div class="row-top" style="margin-bottom:0;">
+        <h1 style="margin:0; font-size:15px;">Signal trace</h1>
+        <button class="back-btn" id="zoom-chart-btn">Zoom</button>
+      </div>
       <p class="sub" style="margin-bottom:10px;">Brightness, baseline, delta threshold, and HI detections over time.</p>
       <div id="trace-legend-wrap"></div>
       <div id="trace-chart-wrap" style="background:var(--panel); border-radius:12px; padding:10px; margin-bottom:14px;"></div>
+      <div class="row-top" style="margin-bottom:8px;">
+        <h1 style="margin:0; font-size:13px; color:var(--text-dim);">Signal trace data</h1>
+        <button class="back-btn" id="zoom-trace-table-btn">Zoom</button>
+      </div>
       <div class="log-wrap" id="trace-log-wrap">
         <table>
           <thead><tr><th>t</th><th>bright</th><th>base</th><th>&Delta;</th><th>state</th><th>kWh</th></tr></thead>
@@ -170,6 +191,12 @@
     </div>
     <p class="sub" style="margin-top:24px;">Region of interest resets each time you open the camera. Draw a box tightly around just the LED for best results.</p>
   </section>
+
+  <!-- FOCUS MODAL: enlarged view of a chart or table -->
+  <div id="focus-modal" class="focus-modal">
+    <button class="icon-btn" id="focus-close-btn" aria-label="Close" style="align-self:flex-end; flex-shrink:0;">&times;</button>
+    <div id="focus-content" class="focus-content"></div>
+  </div>
 
 </div>
 
@@ -230,6 +257,12 @@
     traceChartWrap: document.getElementById('trace-chart-wrap'),
     traceLegendWrap: document.getElementById('trace-legend-wrap'),
     traceLogBody: document.getElementById('trace-log-body'),
+    zoomLogBtn: document.getElementById('zoom-log-btn'),
+    zoomChartBtn: document.getElementById('zoom-chart-btn'),
+    zoomTraceTableBtn: document.getElementById('zoom-trace-table-btn'),
+    focusModal: document.getElementById('focus-modal'),
+    focusContent: document.getElementById('focus-content'),
+    focusCloseBtn: document.getElementById('focus-close-btn'),
     traceSection: document.getElementById('trace-section'),
     exportBtn: document.getElementById('export-btn'),
     newTestBtn: document.getElementById('new-test-btn'),
@@ -728,10 +761,12 @@
       '</div>';
   }
 
-  function buildTraceSvg(trace, durationS){
-    var w = 600, h = 200, pad = 34;
+  function buildTraceSvg(trace, durationS, big){
+    var w = big ? 900 : 600, h = big ? 420 : 200, pad = big ? 46 : 34;
+    var fontSize = big ? 16 : 10;
+    var lineW = big ? 2.6 : 1.8, dashW = big ? 2.2 : 1.5, dotR = big ? 4 : 2.5;
     if(trace.length === 0){
-      return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%"><text x="' + (w/2) + '" y="' + (h/2) + '" font-size="12" fill="#888" text-anchor="middle">no samples recorded</text></svg>';
+      return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%"><text x="' + (w/2) + '" y="' + (h/2) + '" font-size="' + (fontSize + 2) + '" fill="#888" text-anchor="middle">no samples recorded</text></svg>';
     }
     var vals = [];
     trace.forEach(function(s){ vals.push(s.brightness, s.baseline, s.baseline + s.delta); });
@@ -746,18 +781,23 @@
     var basePts = trace.map(function(s){ return xOf(s.t).toFixed(1) + ',' + yOf(s.baseline).toFixed(1); }).join(' ');
     var deltaPts = trace.map(function(s){ return xOf(s.t).toFixed(1) + ',' + yOf(s.baseline + s.delta).toFixed(1); }).join(' ');
     var hiDots = trace.filter(function(s){ return s.hi; }).map(function(s){
-      return '<circle cx="' + xOf(s.t).toFixed(1) + '" cy="' + yOf(s.brightness).toFixed(1) + '" r="2.5" fill="#3ddc84"/>';
+      return '<circle cx="' + xOf(s.t).toFixed(1) + '" cy="' + yOf(s.brightness).toFixed(1) + '" r="' + dotR + '" fill="#3ddc84"/>';
     }).join('');
 
-    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-width:600px">' +
+    var yLabels = big
+      ? '<text x="4" y="' + (pad + 4) + '" font-size="' + fontSize + '" fill="#888">' + maxV.toFixed(0) + '</text>' +
+        '<text x="4" y="' + (h - pad) + '" font-size="' + fontSize + '" fill="#888">' + minV.toFixed(0) + '</text>'
+      : '';
+
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%"' + (big ? '' : ' style="max-width:600px"') + '>' +
       '<line x1="' + pad + '" y1="' + (h - pad) + '" x2="' + (w - pad) + '" y2="' + (h - pad) + '" stroke="#666"/>' +
       '<line x1="' + pad + '" y1="' + pad + '" x2="' + pad + '" y2="' + (h - pad) + '" stroke="#666"/>' +
-      '<polyline points="' + deltaPts + '" fill="none" stroke="#e0a83a" stroke-width="1.5" stroke-dasharray="2,3"/>' +
-      '<polyline points="' + basePts + '" fill="none" stroke="#9aa1a8" stroke-width="1.5" stroke-dasharray="5,4"/>' +
-      '<polyline points="' + brightPts + '" fill="none" stroke="#f2f3f4" stroke-width="1.8"/>' +
-      hiDots +
-      '<text x="' + pad + '" y="' + (h - 8) + '" font-size="10" fill="#888">0s</text>' +
-      '<text x="' + (w - pad - 24) + '" y="' + (h - 8) + '" font-size="10" fill="#888">' + durationS + 's</text>' +
+      '<polyline points="' + deltaPts + '" fill="none" stroke="#e0a83a" stroke-width="' + dashW + '" stroke-dasharray="2,3"/>' +
+      '<polyline points="' + basePts + '" fill="none" stroke="#9aa1a8" stroke-width="' + dashW + '" stroke-dasharray="5,4"/>' +
+      '<polyline points="' + brightPts + '" fill="none" stroke="#f2f3f4" stroke-width="' + lineW + '"/>' +
+      hiDots + yLabels +
+      '<text x="' + pad + '" y="' + (h - 8) + '" font-size="' + fontSize + '" fill="#888">0s</text>' +
+      '<text x="' + (w - pad - (big ? 36 : 24)) + '" y="' + (h - 8) + '" font-size="' + fontSize + '" fill="#888">' + durationS + 's</text>' +
       '</svg>';
   }
 
@@ -767,6 +807,33 @@
         '</td><td>' + s.delta.toFixed(0) + '</td><td>' + (s.hi ? 'HI' : 'lo') + '</td><td>' + (s.cumKwh !== undefined ? s.cumKwh.toFixed(3) : '') + '</td></tr>';
     }).join('');
   }
+
+  /* ---------------- focus modal: enlarged chart/table views ---------------- */
+  function openFocusModal(html){
+    els.focusContent.innerHTML = html;
+    els.focusModal.classList.add('active');
+  }
+  function closeFocusModal(){
+    els.focusModal.classList.remove('active');
+    els.focusContent.innerHTML = '';
+  }
+  els.focusCloseBtn.addEventListener('click', closeFocusModal);
+
+  els.zoomChartBtn.addEventListener('click', function(){
+    openFocusModal('<h2>Signal trace</h2>' + buildTraceLegend() + buildTraceSvg(state.trace, settings.duration, true));
+  });
+
+  els.zoomTraceTableBtn.addEventListener('click', function(){
+    openFocusModal('<h2>Signal trace data</h2><table><thead><tr><th>t</th><th>bright</th><th>base</th><th>&Delta;</th><th>state</th><th>kWh</th></tr></thead><tbody>' +
+      buildTraceRows(state.trace) + '</tbody></table>');
+  });
+
+  els.zoomLogBtn.addEventListener('click', function(){
+    var rows = state.log.map(function(entry, i){
+      return '<tr><td>' + (i + 1) + '</td><td>' + (entry.t / 1000).toFixed(1) + 's</td><td>' + entry.cumKwh.toFixed(3) + '</td></tr>';
+    }).join('');
+    openFocusModal('<h2>Pulse log</h2><table><thead><tr><th>#</th><th>Time</th><th>Cum. kWh</th></tr></thead><tbody>' + rows + '</tbody></table>');
+  });
 
   /* ---------------- summary screen ---------------- */
   function showSummary(){
