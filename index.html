@@ -28,10 +28,11 @@
   .roi-box.set{display:block;}
   .hud{position:absolute; inset:0; display:flex; flex-direction:column; justify-content:space-between;
     padding:14px; pointer-events:none;}
-  .hud-top{display:flex; justify-content:space-between; align-items:center; pointer-events:none;}
+  .hud-top-group{display:flex; flex-direction:column; gap:10px; align-items:center;}
+  .hud-top{display:flex; justify-content:space-between; align-items:center; pointer-events:none; width:100%;}
   .pill{background:rgba(0,0,0,0.55); padding:6px 12px; border-radius:20px; font-size:14px; font-weight:600;}
-  #roi-hint{align-self:center; text-align:center; color:rgba(255,255,255,0.75); font-size:13px; margin:0;}
-  .debug-row{align-self:center; display:flex; gap:6px; flex-wrap:wrap; justify-content:center; pointer-events:none;}
+  #roi-hint{text-align:center; color:rgba(255,255,255,0.75); font-size:13px; margin:0;}
+  .debug-row{display:flex; gap:6px; flex-wrap:wrap; justify-content:center; pointer-events:none;}
   .pill.small{padding:4px 9px; font-size:11px; font-weight:500; font-variant-numeric:tabular-nums;}
   .pill.small#debug-state.hi{background:rgba(61,220,132,0.85); color:#08150d;}
   .pill.small#debug-state.lo{background:rgba(0,0,0,0.55);}
@@ -85,17 +86,19 @@
       <canvas id="sample-canvas" width="24" height="24" style="display:none"></canvas>
       <div id="roi-box" class="roi-box"></div>
       <div class="hud">
-        <div class="hud-top">
-          <span class="pill" id="timer-display">00:60</span>
-          <span class="pill" id="pulse-display">0 pulses</span>
-        </div>
-        <p id="roi-hint">tap and drag on the LED to select the region</p>
-        <div class="debug-row" id="debug-row" style="display:none;">
-          <span class="pill small" id="debug-state">LOW</span>
-          <span class="pill small">b <span id="debug-brightness">0</span></span>
-          <span class="pill small">base <span id="debug-baseline">0</span></span>
-          <span class="pill small">&Delta; <span id="debug-delta">0</span></span>
-          <button class="pill small" id="auto-cal-btn" style="pointer-events:auto; border:none;">Auto</button>
+        <div class="hud-top-group">
+          <div class="hud-top">
+            <span class="pill" id="timer-display">00:60</span>
+            <span class="pill" id="pulse-display">0 pulses</span>
+          </div>
+          <p id="roi-hint">tap and drag on the LED to select the region</p>
+          <div class="debug-row" id="debug-row" style="display:none;">
+            <span class="pill small" id="debug-state">LOW</span>
+            <span class="pill small">b <span id="debug-brightness">0</span></span>
+            <span class="pill small">base <span id="debug-baseline">0</span></span>
+            <span class="pill small">&Delta; <span id="debug-delta">0</span></span>
+            <button class="pill small" id="auto-cal-btn" style="pointer-events:auto; border:none;">Auto</button>
+          </div>
         </div>
         <div class="hud-bottom">
           <button class="icon-btn" id="settings-btn" aria-label="Settings">&#9881;</button>
