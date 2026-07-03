@@ -64,41 +64,14 @@ No build step. It's one HTML file — copy it to the repo and it's live.
    your meter's LED; shorten it for fast-blinking meters, lengthen it for
    slow ones).
 
-## Modes
-
-**Test mode** (default) — runs for a fixed duration (Settings), then shows
-a summary with the signal-trace chart, as described above.
-
-**Collector mode** — runs continuously until you stop it, for use as a
-comparison check against the real Energy Eye device's hourly readings.
-No fixed duration, no signal-trace chart (skipped to avoid unbounded
-memory growth over a long run), just a running pulse count and elapsed
-time. Every detected pulse is logged with a timestamp. Stop it whenever
-you want a reading, then export.
-
-Switch modes in Settings. The toggle is disabled while a run is in
-progress — stop first, then switch.
-
-**Important limitation, not a bug I can fix in this app:** a browser tab
-loses camera access and gets throttled or paused by the phone/OS the
-moment the screen locks or the tab leaves the foreground. Collector mode
-only works while the device stays awake and the tab stays in view the
-whole time. It is not a substitute for the actual device's unattended
-hourly reporting — treat it strictly as a side-by-side comparison tool
-for while you're present and watching it.
-
 ## CSV export
 
-Available from the summary screen after any run (Test or Collector).
-Columns: `timestamp_utc` (ISO 8601), `device_local_time`,
-`elapsed_seconds`, `pulse_number`, `cumulative_kWh`. A few `#`-prefixed
-metadata lines (mode, meter constant, generated-at, GPS) sit above the
-header row — standard CSV readers and Excel/Sheets tolerate this fine,
-but if you're parsing it programmatically, skip lines starting with `#`.
-
-For long Collector runs, the on-screen pulse-log table caps at the most
-recent 200 rows for display performance — the CSV export always contains
-the complete log regardless of what's shown on screen.
+Available from the summary screen after any run. Columns:
+`timestamp_utc` (ISO 8601), `device_local_time`, `elapsed_seconds`,
+`pulse_number`, `cumulative_kWh`. A few `#`-prefixed metadata lines
+(meter constant, generated-at, GPS) sit above the header row — standard
+CSV readers and Excel/Sheets tolerate this fine, but if you're parsing it
+programmatically, skip lines starting with `#`.
 
 There's no auto-upload to Google Drive or automatic hands-off saving —
 every export is a manual button tap that triggers a browser download.
