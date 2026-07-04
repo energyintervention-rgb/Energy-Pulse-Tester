@@ -864,9 +864,9 @@
     lines.push('# Energy Pulse Counter export');
     lines.push('# pulses_per_kWh: ' + settings.pulsesPerKwh);
     lines.push('# generated: ' + new Date().toString());
-    lines.push('# gps: ' + (hasGps
+    lines.push('"# gps: ' + (hasGps
       ? (state.location.lat + ',' + state.location.lon + ' (\u00b1' + Math.round(state.location.accuracy) + 'm)')
-      : state.locationStatus));
+      : state.locationStatus) + '"');
     lines.push('timestamp_utc,device_local_time,elapsed_seconds,pulse_number,cumulative_kWh');
     state.log.forEach(function(entry, i){
       var d = new Date(state.startTime + entry.t);
