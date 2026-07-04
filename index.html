@@ -140,7 +140,7 @@
       </table>
     </div>
 
-    <div id="trace-section">
+    <div>
       <div class="row-top" style="margin-bottom:0;">
         <h1 style="margin:0; font-size:15px;">Signal trace</h1>
         <button class="back-btn" id="zoom-chart-btn">Zoom</button>
@@ -175,7 +175,7 @@
       <label for="set-scale">Pulses per kWh (meter constant)</label>
       <input type="number" id="set-scale" min="1" step="1" value="1000">
     </div>
-    <div class="field" id="duration-field">
+    <div class="field">
       <label for="set-duration">Test duration (seconds)</label>
       <input type="number" id="set-duration" min="5" step="1" value="60">
     </div>
@@ -263,7 +263,6 @@
     focusModal: document.getElementById('focus-modal'),
     focusContent: document.getElementById('focus-content'),
     focusCloseBtn: document.getElementById('focus-close-btn'),
-    traceSection: document.getElementById('trace-section'),
     exportBtn: document.getElementById('export-btn'),
     newTestBtn: document.getElementById('new-test-btn'),
 
@@ -271,7 +270,6 @@
     setDuration: document.getElementById('set-duration'),
     setSensitivity: document.getElementById('set-sensitivity'),
     setCalDuration: document.getElementById('set-cal-duration'),
-    durationField: document.getElementById('duration-field'),
     exportCsvBtn: document.getElementById('export-csv-btn'),
     sensOut: document.getElementById('sens-out'),
     settingsBackBtn: document.getElementById('settings-back-btn')
